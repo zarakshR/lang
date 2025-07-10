@@ -96,13 +96,17 @@ let rec eval (env : env) (t : term) : Value.t =
       let env = ST.union (fun _ _ c -> Some c) env cells in
       let results = ST.map (fun t -> eval env t) binds in
       let tie name =
-        let[@warning "-8"] (Cell cell) = ST.find name cells in
-        cell := Some (ST.find name results)
+        match ST.find name cells with
+        | Cell cell -> cell := Some (ST.find name results)
+        | Plain _ -> ()
       in
       ST.iter (fun x _ -> tie x) binds;
       (* assert no knot left untied *)
       let () =
-        let[@warning "-8"] is_tied (Cell c) = Option.is_some !c in
+        let is_tied = function
+          | Cell cell -> Option.is_some !cell
+          | Plain _ -> true
+        in
         assert (ST.for_all (fun _ -> is_tied) cells)
       in
       eval env body

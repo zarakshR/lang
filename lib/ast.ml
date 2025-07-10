@@ -1,6 +1,6 @@
 type symbol = string [@@deriving show]
 
-type[@warning "-37"] term =
+type term =
   | Laz of term
   | Let of symbol * term * term
   | Fix of (string * term) list * term
