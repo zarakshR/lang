@@ -3,7 +3,6 @@ type symbol = string [@@deriving show]
 type[@warning "-37"] term =
   | Laz of term
   | Let of symbol * term * term
-  | Rec of symbol * term * term
   | Fix of (string * term) list * term
   | Cnd of term * term * term
   | Lam of symbol list * term

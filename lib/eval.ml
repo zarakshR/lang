@@ -52,7 +52,6 @@ let rec free (t : term) : SymSet.t =
   match t with
   | Laz t -> free t
   | Let (x, t, body) -> free t + (free body - x)
-  | Rec (x, t, body) -> free t - x + (free body - x)
   | Fix (binds, body) ->
       let binds = SymTab.of_list binds in
       let free_binds =
@@ -85,12 +84,6 @@ let rec eval (env : env) (t : term) : Value.t =
   | Let (x, t, body) ->
       let e = eval env t in
       let env = ST.add x (ref (Some e)) env in
-      eval env body
-  | Rec (x, t, body) ->
-      let cell = ref None in
-      let env = ST.add x cell env in
-      let e = eval env t in
-      cell := Some e;
       eval env body
   | Fix (binds, body) ->
       let binds = SymTab.of_list binds in
