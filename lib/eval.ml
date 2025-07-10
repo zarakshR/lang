@@ -1,4 +1,3 @@
-(* TODO: add mutable ref-cells *)
 (* TODO: make `eval` CPSing
    let rec eval (env : env) (t : term) (k : value -> 'a) : 'a = *)
 module SymTab = struct
@@ -153,6 +152,10 @@ let[@warning "-8"] stdlib : env =
   let car = unary (fun [ Pair (x, _) ] -> x) in
   let cdr = unary (fun [ Pair (_, x) ] -> x) in
 
+  let ref = unary (fun [ x ] -> Cell (ref x)) in
+  let ref_set = binary (fun [ Cell cell; x ] -> Unit (cell := x)) in
+  let ref_get = unary (fun [ Cell cell ] -> !cell) in
+
   let print_int = unary (fun [ Int n ] -> Unit (Format.printf "%d" n)) in
   let print_bool = unary (fun [ Bool b ] -> Unit (Format.printf "%B" b)) in
   let print_unit = unary (fun [ Unit () ] -> Unit (Format.printf "()")) in
@@ -183,18 +186,10 @@ let[@warning "-8"] stdlib : env =
          ("print_unit", print_unit);
          ("print_nl", print_nl);
          ("force", force);
+         ("ref", ref);
+         (":=", ref_set);
+         ("!", ref_get);
        ]
 
 let eval = eval stdlib
 let parse program = Parser.prog Lexer.read (Lexing.from_string program)
-
-(* "21"; 15 *)
-let _t8 =
-  let prog =
-    {|
-    let n = lazy (let _ = (print_int 1) in 5) in
-    let _ = (print_int 2) in
-    (+ (+ (force n) (force n)) (force n))
-  |}
-  in
-  parse prog

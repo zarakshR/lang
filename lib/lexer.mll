@@ -4,7 +4,7 @@
 }
 
 let num = ['0'-'9']
-let symbol = ['a'-'z' 'A'-'Z' '_' '-' '+' '*' '=' '?']
+let symbol = ['a'-'z' 'A'-'Z' '_' '-' '+' '*' '=' '?' ':' '!']
 
 rule read = parse
     | [' ' '\t' '\n']+                { read lexbuf }

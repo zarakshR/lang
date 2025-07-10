@@ -95,6 +95,37 @@ let test_eval =
       (eval (parse program))
   in
 
+  let test_ref_cells () =
+    let program =
+      {|
+    let cell = (ref 1) in
+    let old = (! cell) in
+    let _ = (:= cell 2) in
+    let new = (! cell) in
+    (cons old new)
+|}
+    in
+    let expected = Value.(Pair (Int 1, Int 2)) in
+    Alcotest.check (module Value) "ref cells" expected (eval (parse program))
+  in
+
+  let test_laziness () =
+    let program =
+      {|
+    let cell = (ref 0) in
+    let incr =
+      let n = (! cell) in
+      (:= cell (+ n 1))
+    in
+    let n = lazy (let _ = (incr) in 5) in
+    let n = (+ (force n) (force n)) in
+    (cons (! cell) n)
+|}
+    in
+    let expected = Value.(Pair (Int 1, Int 10)) in
+    Alcotest.check (module Value) "laziness" expected (eval (parse program))
+  in
+
   List.map
     (fun (name, test) -> Alcotest.test_case name `Quick test)
     [
@@ -105,6 +136,8 @@ let test_eval =
       ("shadowing", test_shadowing);
       ("pair primitives", test_pair_primitives);
       ("mutual recursion", test_mutual_recursion);
+      ("ref cells", test_ref_cells);
+      ("laziness", test_laziness);
     ]
 
 let test_sample_programs =
