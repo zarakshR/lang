@@ -1,4 +1,3 @@
-(* TODO: distinguish mutable (option ref) and plain values in envs *)
 (* TODO: add mutable ref-cells *)
 (* TODO: make `eval` CPSing
    let rec eval (env : env) (t : term) (k : value -> 'a) : 'a = *)
@@ -21,12 +20,19 @@ module Value = struct
     | Bool of bool
     | Int of int
     | Pair of t * t
+    | Cell of t ref
     | Thunk of env * Ast.term * t option ref
     | Closure of env * Ast.symbol list * Ast.term
     | Builtin of int * (t list -> t)
   [@@deriving show]
 
-  and env = t option ref SymTab.t [@@deriving show]
+  and env = binding SymTab.t [@@deriving show]
+
+  and binding =
+    (* just a value *)
+    | Plain of t
+    (* a cell that will be filled in with a value later, for recursion *)
+    | Cell of t option ref
 
   let rec equal (x : t) (y : t) : bool =
     match (x, y) with
@@ -83,21 +89,23 @@ let rec eval (env : env) (t : term) : Value.t =
       Thunk (env, t, ref None)
   | Let (x, t, body) ->
       let e = eval env t in
-      let env = ST.add x (ref (Some e)) env in
+      let env = ST.add x (Plain e) env in
       eval env body
   | Fix (binds, body) ->
       let binds = SymTab.of_list binds in
-      (* map each name to a mutable cell, each initially empty *)
-      let cells = ST.mapi (fun _ _ -> ref None) binds in
-      (* bind each name to its cell in env *)
-      let env = ST.union (fun _ _ e -> Some e) env cells in
-      (* evaluate each binding with this env, mapping names to results *)
+      let cells = ST.mapi (fun _ _ -> Cell (ref None)) binds in
+      let env = ST.union (fun _ _ c -> Some c) env cells in
       let results = ST.map (fun t -> eval env t) binds in
-      (* tie all the knots *)
-      let tie name = ST.find name cells := Some (ST.find name results) in
+      let tie name =
+        let[@warning "-8"] (Cell cell) = ST.find name cells in
+        cell := Some (ST.find name results)
+      in
       ST.iter (fun x _ -> tie x) binds;
-      (* assert nothing left untied *)
-      assert (ST.for_all (fun _ cell -> Option.is_some !cell) env);
+      (* assert no knot left untied *)
+      let () =
+        let[@warning "-8"] is_tied (Cell c) = Option.is_some !c in
+        assert (ST.for_all (fun _ -> is_tied) cells)
+      in
       eval env body
   | Cnd (t, then_, else_) ->
       let[@warning "-8"] (Bool e) = eval env t in
@@ -112,7 +120,7 @@ let rec eval (env : env) (t : term) : Value.t =
           if List.length args <> List.length params then
             failwith "arity mismatch";
           let actuals =
-            let bind param arg = (param, ref (Some arg)) in
+            let bind param arg = (param, Plain arg) in
             List.map2 bind params args
           in
           let closure_env =
@@ -123,7 +131,10 @@ let rec eval (env : env) (t : term) : Value.t =
           if arity <> List.length args then failwith "arity mismatch";
           builtin args)
   | Var v -> (
-      try Option.get !(ST.find v env)
+      try
+        match ST.find v env with
+        | Cell cell -> Option.get !cell
+        | Plain value -> value
       with Invalid_argument _ | Not_found -> failwith ("not found: " ^ v))
   | LitInt n -> Int n
   | LitBool b -> Bool b
@@ -158,7 +169,7 @@ let[@warning "-8"] stdlib : env =
   in
   SymTab.of_list
   @@ List.map
-       (fun (sym, impl) -> (sym, ref (Some impl)))
+       (fun (sym, impl) -> (sym, Plain impl))
        [
          ("+", add);
          ("-", sub);
