@@ -96,7 +96,6 @@ open Ast
 open Value
 
 let rec eval (env : Env.t) (expr : Ast.t) (k : Value.t -> Value.t) : Value.t =
-  let module ST = SymTab in
   let ( let* ) = ( @@ ) in
   match expr with
   | Laz e ->
@@ -117,9 +116,9 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.t -> Value.t) : Value.t =
       (let* (Bool cond) = eval env test in
        if cond then eval env then_ k else eval env else_ k)
       [@warning "-8"]
-  | Lam (args, body) ->
+  | Lam (param, body) ->
       let env = Env.trim env body in
-      k @@ Closure (env, args, body)
+      k @@ Closure (env, param, body)
   | App (f, arg) -> (
       let* actual = eval env arg in
       let* f = eval env f in
@@ -164,6 +163,7 @@ let[@warning "-8"] stdlib : Env.t =
                 value)
         | Some value -> value)
   in
+
   List.fold_left
     (fun env (name, binding) -> Env.extend env name binding)
     Env.empty
