@@ -140,6 +140,18 @@ let test_eval =
     Alcotest.check (module Value) "laziness" expected (eval (parse program))
   in
 
+  let test_call_cc () =
+    let program =
+      {|
+    let x = (+ (call/cc (\k -> (k 1))) 1) in
+    let y = (call/cc (\k -> (+ 1 (k 1)))) in
+    (cons x y)
+|}
+    in
+    let expected = Value.(Pair (Int 2, Int 1)) in
+    Alcotest.check (module Value) "call/cc" expected (eval (parse program))
+  in
+
   List.map
     (fun (name, test) -> Alcotest.test_case name `Quick test)
     [
@@ -153,6 +165,7 @@ let test_eval =
       ("mutual recursion", test_mutual_recursion);
       ("ref cells", test_ref_cells);
       ("laziness", test_laziness);
+      ("call/cc", test_call_cc);
     ]
 
 let test_sample_programs =
@@ -194,7 +207,49 @@ let test_sample_programs =
     Alcotest.check (module Value) "fibonacci" expected (eval (parse program))
   in
 
-  [ Alcotest.test_case "fibonacci" `Slow test_fibonacci ]
+  let test_imperative () =
+    let program =
+      {|
+    let make_label _ = (call/cc (\k -> k)) in
+    let goto label = (label label) in
+    let gen_range source from to =
+      (call/cc (\return ->
+        let counter = (ref to) in
+        let decr _ = (:= counter (- (! counter) 1)) in
+        let l = (ref ()) in
+        let loop_label = (make_label ()) in
+        if (=? (! counter) from) then
+          (return (! l))
+        else
+          let _ = (decr ()) in
+          let _ = (:= l (cons (source (! counter)) (! l))) in
+          (goto loop_label)))
+    in
+    let list_search n l =
+      (call/cc (\return ->
+        fix list_search l idx =
+          if (=? (car l) n) then
+            (return idx)
+          else
+            (+ idx (list_search (cdr l) (+ idx 1)))
+        in
+        (list_search l 0)))
+    in
+    let gen_serial = (gen_range (\x -> x)) in
+    let gen_squares = (gen_range (\x -> (* x x))) in
+    let a = (list_search 3 (gen_serial 0 10)) in
+    let b = (list_search 25 (gen_squares 0 10)) in
+    (cons a b)
+  |}
+    in
+    let expected = Value.(Pair (Int 3, Int 5)) in
+    Alcotest.check (module Value) "imperative" expected (eval (parse program))
+  in
+
+  [
+    Alcotest.test_case "fibonacci" `Slow test_fibonacci;
+    Alcotest.test_case "imperative" `Slow test_imperative;
+  ]
 
 let () =
   Alcotest.run "Interpreter"

@@ -10,7 +10,10 @@ module rec Value : sig
     | Thunk of Env.t * Ast.t * t option ref
     | Closure of Env.t * symbol * Ast.t
     | Builtin of (t -> t)
+    | Control of (Env.t -> Ast.t -> k -> t)
   [@@deriving show]
+
+  and k = t -> t
 
   val equal : t -> t -> bool
 end = struct
@@ -23,7 +26,10 @@ end = struct
     | Thunk of Env.t * Ast.t * t option ref
     | Closure of Env.t * symbol * Ast.t
     | Builtin of (t -> t)
+    | Control of (Env.t -> Ast.t -> k -> t)
   [@@deriving show]
+
+  and k = t -> t
 
   let rec equal (x : t) (y : t) : bool =
     match (x, y) with
@@ -95,7 +101,7 @@ end
 open Ast
 open Value
 
-let rec eval (env : Env.t) (expr : Ast.t) (k : Value.t -> Value.t) : Value.t =
+let rec eval (env : Env.t) (expr : Ast.t) (k : Value.k) : Value.t =
   let ( let* ) = ( @@ ) in
   match expr with
   | Laz e ->
@@ -120,13 +126,16 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.t -> Value.t) : Value.t =
       let env = Env.trim env body in
       k @@ Closure (env, param, body)
   | App (f, arg) -> (
-      let* actual = eval env arg in
       let* f = eval env f in
       match[@warning "-8"] f with
-      | Closure (env, param, body) ->
-          let env = Env.extend env param actual in
-          eval env body k
-      | Builtin builtin -> k @@ builtin actual)
+      | Closure (cl_env, param, body) ->
+          let* actual = eval env arg in
+          let cl_env = Env.extend cl_env param actual in
+          eval cl_env body k
+      | Builtin builtin ->
+          let* actual = eval env arg in
+          k @@ builtin actual
+      | Control op -> op env arg k)
   | Var v -> k @@ Env.lookup env v
   | LitInt n -> k @@ Int n
   | LitBool b -> k @@ Bool b
@@ -152,6 +161,17 @@ let[@warning "-8"] stdlib : Env.t =
   let print_bool = Builtin (fun (Bool b) -> Unit (Format.printf "%B" b)) in
   let print_unit = Builtin (fun (Unit ()) -> Unit (Format.printf "()")) in
   let print_nl = Builtin (fun (Unit ()) -> Unit (Format.printf "\n")) in
+
+  let call_cc =
+    let ( let* ) = ( @@ ) in
+    let call_cc env t cc =
+      let* (Closure (cl_env, param, body)) = eval env t in
+      let return env t _ = eval env t cc in
+      let cl_env = Env.extend cl_env param (Control return) in
+      eval cl_env body cc
+    in
+    Control call_cc
+  in
 
   let force =
     Builtin
@@ -183,6 +203,7 @@ let[@warning "-8"] stdlib : Env.t =
       ("ref", ref);
       (":=", ref_set);
       ("!", ref_get);
+      ("call/cc", call_cc);
     ]
 
 let eval e = eval stdlib e Fun.id
