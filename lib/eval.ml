@@ -7,12 +7,13 @@ module rec Value : sig
     | Int of int
     | Pair of t * t
     | Cell of t ref
-    | Thunk of Env.t * Ast.t * t option ref
+    | Thunk of thunk ref
     | Closure of Env.t * symbol * Ast.t
     | Builtin of (t -> t)
     | Control of (Env.t -> Ast.t -> k -> t)
   [@@deriving show]
 
+  and thunk = Unresolved of Env.t * Ast.t | Resolved of t
   and k = t -> t
 
   val equal : t -> t -> bool
@@ -23,12 +24,13 @@ end = struct
     | Int of int
     | Pair of t * t
     | Cell of t ref
-    | Thunk of Env.t * Ast.t * t option ref
+    | Thunk of thunk ref
     | Closure of Env.t * symbol * Ast.t
     | Builtin of (t -> t)
     | Control of (Env.t -> Ast.t -> k -> t)
   [@@deriving show]
 
+  and thunk = Unresolved of Env.t * Ast.t | Resolved of t
   and k = t -> t
 
   let rec equal (x : t) (y : t) : bool =
@@ -106,7 +108,7 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.k) : Value.t =
   match expr with
   | Laz e ->
       let env = Env.trim env e in
-      k @@ Thunk (env, e, ref None)
+      k @@ Thunk (ref (Unresolved (env, e)))
   | Let (name, e, body) ->
       let* e = eval env e in
       let env = Env.extend env name e in
@@ -175,13 +177,13 @@ let[@warning "-8"] stdlib : Env.t =
 
   let force =
     Builtin
-      (fun (Thunk (env, e, cell)) ->
-        match !cell with
-        | None ->
+      (fun (Thunk thunk) ->
+        match !thunk with
+        | Unresolved (env, e) ->
             eval env e (fun value ->
-                cell := Some value;
+                thunk := Resolved value;
                 value)
-        | Some value -> value)
+        | Resolved value -> value)
   in
 
   List.fold_left
