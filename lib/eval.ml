@@ -1,5 +1,3 @@
-(* TODO: make `eval` CPSing
-   let rec eval (env : env) (t : Ast.t) (k : value -> 'a) : 'a = *)
 open Shared
 
 module rec Value : sig
@@ -97,39 +95,43 @@ end
 open Ast
 open Value
 
-let rec eval (env : Env.t) (expr : Ast.t) : Value.t =
+let rec eval (env : Env.t) (expr : Ast.t) (k : Value.t -> Value.t) : Value.t =
   let module ST = SymTab in
+  let ( let* ) = ( @@ ) in
   match expr with
   | Laz e ->
       let env = Env.trim env e in
-      Thunk (env, e, ref None)
+      k @@ Thunk (env, e, ref None)
   | Let (name, e, body) ->
-      let res = eval env e in
-      let env = Env.extend env name res in
-      eval env body
+      let* e = eval env e in
+      let env = Env.extend env name e in
+      eval env body k
   | Fix (binds, body) ->
       let names, exprs = List.split binds in
       let env = List.fold_left Env.knot env names in
-      let results = List.map (eval env) exprs in
+      (* TODO: this will need attention when control ops are implemented *)
+      let results = List.map (fun e -> eval env e Fun.id) exprs in
       let _ = List.map2 (Env.tie env) names results in
-      eval env body
+      eval env body k
   | Cnd (test, then_, else_) ->
-      let[@warning "-8"] (Bool e) = eval env test in
-      if e then eval env then_ else eval env else_
+      (let* (Bool cond) = eval env test in
+       if cond then eval env then_ k else eval env else_ k)
+      [@warning "-8"]
   | Lam (args, body) ->
       let env = Env.trim env body in
-      Closure (env, args, body)
+      k @@ Closure (env, args, body)
   | App (f, arg) -> (
-      let actual = eval env arg in
-      match[@warning "-8"] eval env f with
+      let* actual = eval env arg in
+      let* f = eval env f in
+      match[@warning "-8"] f with
       | Closure (env, param, body) ->
           let env = Env.extend env param actual in
-          eval env body
-      | Builtin builtin -> builtin actual)
-  | Var v -> Env.lookup env v
-  | LitInt n -> Int n
-  | LitBool b -> Bool b
-  | LitUnit () -> Unit ()
+          eval env body k
+      | Builtin builtin -> k @@ builtin actual)
+  | Var v -> k @@ Env.lookup env v
+  | LitInt n -> k @@ Int n
+  | LitBool b -> k @@ Bool b
+  | LitUnit () -> k @@ Unit ()
 
 let[@warning "-8"] stdlib : Env.t =
   let add = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x + y))) in
@@ -157,9 +159,9 @@ let[@warning "-8"] stdlib : Env.t =
       (fun (Thunk (env, e, cell)) ->
         match !cell with
         | None ->
-            let value = eval env e in
-            cell := Some value;
-            value
+            eval env e (fun value ->
+                cell := Some value;
+                value)
         | Some value -> value)
   in
   List.fold_left
@@ -183,5 +185,5 @@ let[@warning "-8"] stdlib : Env.t =
       ("!", ref_get);
     ]
 
-let eval = eval stdlib
+let eval e = eval stdlib e Fun.id
 let parse program = Parser.prog Lexer.read (Lexing.from_string program)
