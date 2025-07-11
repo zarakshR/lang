@@ -26,24 +26,24 @@
 %token EOF
 
 (* Grammar *)
-%start<term> prog
+%start<Ast.t> prog
 
 %%
 
-let prog := ~ = term; EOF; <>
+let prog := ~ = expr; EOF; <>
 
-let term :=
-  | LPAREN; ~ = term; RPAREN; <>
+let expr :=
+  | LPAREN; ~ = expr; RPAREN; <>
   (* application *)
-  | LPAREN; func = term; args = term+; RPAREN; {
+  | LPAREN; func = expr; args = expr+; RPAREN; {
     List.fold_left (fun acc arg -> App (acc, arg)) func args
   }
-  | LAZY; ~ = term; <Laz>
-  | LET; (name, expr) = binding; IN; ~ = term; <Let>
-  | FIX; ~ = separated_nonempty_list(AND, binding); IN; ~ = term; <Fix>
-  | IF; test = term; THEN; then_ = term; ELSE; else_ = term; <Cnd>
-  | LAMBDA; params = SYMBOL+; ARROW; ~ = term; {
-    List.fold_right (fun param acc -> Lam (param, acc)) params term
+  | LAZY; ~ = expr; <Laz>
+  | LET; (name, expr) = binding; IN; body = expr; <Let>
+  | FIX; ~ = separated_nonempty_list(AND, binding); IN; ~ = expr; <Fix>
+  | IF; test = expr; THEN; then_ = expr; ELSE; else_ = expr; <Cnd>
+  | LAMBDA; params = SYMBOL+; ARROW; ~ = expr; {
+    List.fold_right (fun param acc -> Lam (param, acc)) params expr
   }
   | ~ = SYMBOL; <Var>
   | ~ = INT; <LitInt>
@@ -51,10 +51,10 @@ let term :=
   | ~ = UNIT; <LitUnit>
 
 let binding :=
-  symbols = SYMBOL+; EQUALS; ~ = term; {
+  symbols = SYMBOL+; EQUALS; ~ = expr; {
     let [@warning "-8"] name :: params = symbols in
-    let term =
-      List.fold_right (fun param acc -> Lam (param, acc)) params term
+    let expr =
+      List.fold_right (fun param acc -> Lam (param, acc)) params expr
     in
-    (name, term)
+    (name, expr)
   }

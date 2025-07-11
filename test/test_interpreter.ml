@@ -4,7 +4,7 @@ module Value = I.Eval.Value
 let parse program = I.Parser.prog I.Lexer.read (Lexing.from_string program)
 let eval = I.Eval.eval
 
-(* TODO *)
+(* TODO: rewrite these so that eval tests are not dependent on parsing *)
 let test_parser = []
 
 let test_eval =

@@ -1,17 +1,6 @@
 (* TODO: make `eval` CPSing
-   let rec eval (env : env) (t : term) (k : value -> 'a) : 'a = *)
-module SymTab = struct
-  include Map.Make (String)
-
-  let pp pp_a ff st =
-    let open Format in
-    let pp_print_binding ff (k, v) =
-      fprintf ff "@[<hov 1>(%s,@ %a)@]" k pp_a v
-    in
-    fprintf ff "@[<hov 1>(%a)@]" (pp_print_list pp_print_binding) (to_list st)
-end
-
-module SymSet = Set.Make (String)
+   let rec eval (env : env) (t : Ast.t) (k : value -> 'a) : 'a = *)
+open Shared
 
 module Value = struct
   type t =
@@ -20,8 +9,8 @@ module Value = struct
     | Int of int
     | Pair of t * t
     | Cell of t ref
-    | Thunk of env * Ast.term * t option ref
-    | Closure of env * Ast.symbol * Ast.term
+    | Thunk of env * Ast.t * t option ref
+    | Closure of env * symbol * Ast.t
     | Builtin of (t -> t)
   [@@deriving show]
 
@@ -46,70 +35,43 @@ module Value = struct
         raise (Invalid_argument "equality of builtin")
     (* TODO: types? *)
     | _, _ -> false
+
+  (* trim env w.r.t to `t` *)
+  let trim env t = SymTab.filter (fun x _ -> SymSet.mem x (Ast.free t)) env
 end
 
 open Ast
 open Value
 
-let rec free (t : term) : SymSet.t =
-  let ( - ) set elt = SymSet.remove elt set in
-  let ( + ) = SymSet.union in
-  match t with
-  | Laz t -> free t
-  | Let (x, t, body) -> free t + (free body - x)
-  | Fix (binds, body) ->
-      let binds = SymTab.of_list binds in
-      let free_binds =
-        SymTab.fold (fun _ t acc -> acc + free t) binds SymSet.empty
-      in
-      let free_binds =
-        SymSet.filter (fun x -> not (SymTab.mem x binds)) free_binds
-      in
-      free_binds + free body
-  | Cnd (t, then_, else_) -> free t + free then_ + free else_
-  | Lam (param, body) -> free body - param
-  | App (f, arg) -> free f + free arg
-  | Var v -> SymSet.singleton v
-  | LitInt _ | LitBool _ | LitUnit _ -> SymSet.empty
-
-let rec eval (env : env) (t : term) : Value.t =
+let rec eval (env : env) (expr : Ast.t) : Value.t =
   let module ST = SymTab in
-  (* trim env w.r.t to `t` *)
-  let trim t = ST.filter (fun x _ -> SymSet.mem x (free t)) env in
-
-  match t with
-  | Laz t ->
-      let env = trim t in
-      Thunk (env, t, ref None)
-  | Let (x, t, body) ->
-      let e = eval env t in
-      let env = ST.add x (Plain e) env in
+  match expr with
+  | Laz e ->
+      let env = trim env e in
+      Thunk (env, e, ref None)
+  | Let (name, e, body) ->
+      let res = eval env e in
+      let env = ST.add name (Plain res) env in
       eval env body
   | Fix (binds, body) ->
-      let binds = SymTab.of_list binds in
-      let cells = ST.mapi (fun _ _ -> Cell (ref None)) binds in
-      let env = ST.union (fun _ _ c -> Some c) env cells in
-      let results = ST.map (fun t -> eval env t) binds in
-      let tie name =
-        match ST.find name cells with
-        | Cell cell -> cell := Some (ST.find name results)
-        | Plain _ -> ()
+      let names, exprs = Seq.unzip (List.to_seq binds) in
+      let names, exprs = (Seq.memoize names, Seq.memoize exprs) in
+      let env =
+        let extend env name = ST.add name (Cell (ref None)) env in
+        Seq.fold_left extend env names
       in
-      ST.iter (fun x _ -> tie x) binds;
-      (* assert no knot left untied *)
-      let () =
-        let is_tied = function
-          | Cell cell -> Option.is_some !cell
-          | Plain _ -> true
-        in
-        assert (ST.for_all (fun _ -> is_tied) cells)
+      let results = Seq.map (eval env) exprs in
+      let tie (name, result) =
+        let[@warning "-8"] (Cell cell) = ST.find name env in
+        cell := Some result
       in
+      Seq.iter tie (Seq.zip names results);
       eval env body
-  | Cnd (t, then_, else_) ->
-      let[@warning "-8"] (Bool e) = eval env t in
+  | Cnd (test, then_, else_) ->
+      let[@warning "-8"] (Bool e) = eval env test in
       if e then eval env then_ else eval env else_
   | Lam (args, body) ->
-      let env = trim body in
+      let env = trim env body in
       Closure (env, args, body)
   | App (f, arg) -> (
       let arg = eval env arg in
@@ -151,10 +113,10 @@ let[@warning "-8"] stdlib : env =
 
   let force =
     Builtin
-      (fun (Thunk (env, term, cell)) ->
+      (fun (Thunk (env, e, cell)) ->
         match !cell with
         | None ->
-            let value = eval env term in
+            let value = eval env e in
             cell := Some value;
             value
         | Some value -> value)
