@@ -21,8 +21,8 @@ module Value = struct
     | Pair of t * t
     | Cell of t ref
     | Thunk of env * Ast.term * t option ref
-    | Closure of env * Ast.symbol list * Ast.term
-    | Builtin of int * (t list -> t)
+    | Closure of env * Ast.symbol * Ast.term
+    | Builtin of (t -> t)
   [@@deriving show]
 
   and env = binding SymTab.t [@@deriving show]
@@ -67,13 +67,8 @@ let rec free (t : term) : SymSet.t =
       in
       free_binds + free body
   | Cnd (t, then_, else_) -> free t + free then_ + free else_
-  | Lam (args, body) ->
-      List.fold_left (fun acc arg -> acc - arg) (free body) args
-  | App (f, args) ->
-      let free_args =
-        List.fold_left (fun acc arg -> acc + free arg) SymSet.empty args
-      in
-      free f + free_args
+  | Lam (param, body) -> free body - param
+  | App (f, arg) -> free f + free arg
   | Var v -> SymSet.singleton v
   | LitInt _ | LitBool _ | LitUnit _ -> SymSet.empty
 
@@ -116,23 +111,13 @@ let rec eval (env : env) (t : term) : Value.t =
   | Lam (args, body) ->
       let env = trim body in
       Closure (env, args, body)
-  | App (f, args) -> (
-      let args = List.map (fun arg -> eval env arg) args in
+  | App (f, arg) -> (
+      let arg = eval env arg in
       match[@warning "-8"] eval env f with
-      | Closure (closure_env, params, body) ->
-          if List.length args <> List.length params then
-            failwith "arity mismatch";
-          let actuals =
-            let bind param arg = (param, Plain arg) in
-            List.map2 bind params args
-          in
-          let closure_env =
-            ST.union (fun _ _ x -> Some x) closure_env (ST.of_list actuals)
-          in
-          eval closure_env body
-      | Builtin (arity, builtin) ->
-          if arity <> List.length args then failwith "arity mismatch";
-          builtin args)
+      | Closure (env, param, body) ->
+          let env = ST.add param (Plain arg) env in
+          eval env body
+      | Builtin builtin -> builtin arg)
   | Var v -> (
       try
         match ST.find v env with
@@ -144,29 +129,29 @@ let rec eval (env : env) (t : term) : Value.t =
   | LitUnit () -> Unit ()
 
 let[@warning "-8"] stdlib : env =
-  let binary f = Builtin (2, f) in
-  let unary f = Builtin (1, f) in
+  let add = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x + y))) in
+  let sub = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x - y))) in
+  let mul = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x * y))) in
+  let eq = Builtin (fun x -> Builtin (fun y -> Bool (Value.equal x y))) in
+  let cons = Builtin (fun x -> Builtin (fun y -> Pair (x, y))) in
 
-  let add = binary (fun [ Int x; Int y ] -> Int (x + y)) in
-  let sub = binary (fun [ Int x; Int y ] -> Int (x - y)) in
-  let mul = binary (fun [ Int x; Int y ] -> Int (x * y)) in
-  let eq = binary (fun [ x; y ] -> Bool (Value.equal x y)) in
-  let cons = binary (fun [ x; y ] -> Pair (x, y)) in
+  let car = Builtin (fun (Pair (x, _)) -> x) in
+  let cdr = Builtin (fun (Pair (_, x)) -> x) in
 
-  let car = unary (fun [ Pair (x, _) ] -> x) in
-  let cdr = unary (fun [ Pair (_, x) ] -> x) in
+  let ref = Builtin (fun x -> Cell (ref x)) in
+  let ref_set =
+    Builtin (fun (Cell cell) -> Builtin (fun x -> Unit (cell := x)))
+  in
+  let ref_get = Builtin (fun (Cell cell) -> !cell) in
 
-  let ref = unary (fun [ x ] -> Cell (ref x)) in
-  let ref_set = binary (fun [ Cell cell; x ] -> Unit (cell := x)) in
-  let ref_get = unary (fun [ Cell cell ] -> !cell) in
-
-  let print_int = unary (fun [ Int n ] -> Unit (Format.printf "%d" n)) in
-  let print_bool = unary (fun [ Bool b ] -> Unit (Format.printf "%B" b)) in
-  let print_unit = unary (fun [ Unit () ] -> Unit (Format.printf "()")) in
-  let print_nl = unary (fun [ Unit () ] -> Unit (Format.printf "\n")) in
+  let print_int = Builtin (fun (Int n) -> Unit (Format.printf "%d" n)) in
+  let print_bool = Builtin (fun (Bool b) -> Unit (Format.printf "%B" b)) in
+  let print_unit = Builtin (fun (Unit ()) -> Unit (Format.printf "()")) in
+  let print_nl = Builtin (fun (Unit ()) -> Unit (Format.printf "\n")) in
 
   let force =
-    unary (fun [ Thunk (env, term, cell) ] ->
+    Builtin
+      (fun (Thunk (env, term, cell)) ->
         match !cell with
         | None ->
             let value = eval env term in

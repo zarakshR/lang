@@ -5,8 +5,8 @@ type term =
   | Let of symbol * term * term
   | Fix of (string * term) list * term
   | Cnd of term * term * term
-  | Lam of symbol list * term
-  | App of term * term list
+  | Lam of symbol * term
+  | App of term * term
   | Var of symbol
   | LitInt of int
   | LitBool of bool

@@ -76,6 +76,20 @@ let test_eval =
       (eval (parse program))
   in
 
+  let test_currying () =
+    let program =
+      {|
+    let f x y z = (+ (+ x y) z) in
+    let a = (f 1) in
+    let b = (f 1 2) in
+    let c = (f 1 2 3) in
+    (cons (cons (a 2 3) (b 3)) c)
+|}
+    in
+    let expected = Value.(Pair (Pair (Int 6, Int 6), Int 6)) in
+    Alcotest.check (module Value) "currying" expected (eval (parse program))
+  in
+
   let test_mutual_recursion () =
     let program =
       {|
@@ -132,6 +146,7 @@ let test_eval =
       ("simple application", test_simple_app);
       ("multiple application", test_multiple_app);
       ("let binding", test_let_binding);
+      ("currying", test_currying);
       ("recursion", test_recursion);
       ("shadowing", test_shadowing);
       ("pair primitives", test_pair_primitives);
