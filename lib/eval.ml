@@ -10,7 +10,7 @@ module rec Value : sig
     | Thunk of thunk ref
     | Closure of Env.t * symbol * Ast.t
     | Builtin of (t -> t)
-    | Control of (Env.t -> Ast.t -> k -> t)
+    | Control of (k -> k)
   [@@deriving show]
 
   and thunk = Unresolved of Env.t * Ast.t | Resolved of t
@@ -27,7 +27,7 @@ end = struct
     | Thunk of thunk ref
     | Closure of Env.t * symbol * Ast.t
     | Builtin of (t -> t)
-    | Control of (Env.t -> Ast.t -> k -> t)
+    | Control of (k -> k)
   [@@deriving show]
 
   and thunk = Unresolved of Env.t * Ast.t | Resolved of t
@@ -114,11 +114,21 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.k) : Value.t =
       let env = Env.extend env name e in
       eval env body k
   | Fix (binds, body) ->
-      let names, exprs = List.split binds in
-      let env = List.fold_left Env.knot env names in
-      (* TODO: this will need attention when control ops are implemented *)
-      let results = List.map (fun e -> eval env e Fun.id) exprs in
-      let _ = List.map2 (Env.tie env) names results in
+      let env =
+        List.fold_left (fun env (name, _) -> Env.knot env name) env binds
+      in
+      (* use k here just to sequence, we don't want evaluation of bindings to
+         depend on back-references existing *)
+      let rec fix_eval binds k =
+        match binds with
+        | [] -> k ()
+        | (name, expr) :: binds ->
+            let* value = eval env expr in
+            let* () = fix_eval binds in
+            Env.tie env name value;
+            k ()
+      in
+      let* () = fix_eval binds in
       eval env body k
   | Cnd (test, then_, else_) ->
       (let* (Bool cond) = eval env test in
@@ -137,7 +147,7 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.k) : Value.t =
       | Builtin builtin ->
           let* actual = eval env arg in
           k @@ builtin actual
-      | Control op -> op env arg k)
+      | Control op -> eval env arg (op k))
   | Var v -> k @@ Env.lookup env v
   | LitInt n -> k @@ Int n
   | LitBool b -> k @@ Bool b
@@ -165,14 +175,24 @@ let[@warning "-8"] stdlib : Env.t =
   let print_nl = Builtin (fun (Unit ()) -> Unit (Format.printf "\n")) in
 
   let call_cc =
-    let ( let* ) = ( @@ ) in
-    let call_cc env t cc =
-      let* (Closure (cl_env, param, body)) = eval env t in
-      let return env t _ = eval env t cc in
+    let call_cc cc (Closure (cl_env, param, body)) =
+      let return _ x = cc x in
       let cl_env = Env.extend cl_env param (Control return) in
       eval cl_env body cc
     in
     Control call_cc
+  in
+
+  let reset =
+    Control
+      (fun cc (Closure (cl_env, _, body)) -> cc @@ eval cl_env body Fun.id)
+  in
+
+  let shift =
+    Control
+      (fun cc (Closure (cl_env, k, body)) ->
+        let cl_env = Env.extend cl_env k (Builtin cc) in
+        eval cl_env body Fun.id)
   in
 
   let force =
@@ -206,6 +226,7 @@ let[@warning "-8"] stdlib : Env.t =
       (":=", ref_set);
       ("!", ref_get);
       ("call/cc", call_cc);
+      ("reset", reset);
     ]
 
 let eval e = eval stdlib e Fun.id

@@ -1,3 +1,5 @@
+(* TODO: lots of repetitive Alcotest.check calls, remove*)
+
 module I = Interpreter
 module Value = I.Eval.Value
 
@@ -152,6 +154,21 @@ let test_eval =
     Alcotest.check (module Value) "call/cc" expected (eval (parse program))
   in
 
+  let test_shift_reset () =
+    let program =
+      {|
+    let x = (reset (\_ -> (
+              (- (+ 3 (shift (\k -> (* 5 2)))) 1))))
+    in
+    let y = (- (reset (\_ -> (+ 3 (shift (\k -> (* 5 2)))))) 1)
+    in
+    (cons x y)
+|}
+    in
+    let expected = Value.(Pair (Int 10, Int 9)) in
+    Alcotest.check (module Value) "shift/reset" expected (eval (parse program))
+  in
+
   List.map
     (fun (name, test) -> Alcotest.test_case name `Quick test)
     [
@@ -166,9 +183,22 @@ let test_eval =
       ("ref cells", test_ref_cells);
       ("laziness", test_laziness);
       ("call/cc", test_call_cc);
+      ("shift/reset", test_shift_reset);
     ]
 
 let test_sample_programs =
+  (* build an object language list of Ints from a list of OCaml ints *)
+  let value_list_of_ints ints =
+    List.fold_right
+      (fun n value_list -> Value.(Pair (Int n, value_list)))
+      ints (Unit ())
+  in
+  let value_list_of_pairs pairs =
+    List.fold_right
+      (fun (x, y) value_list -> Value.(Pair (Pair (x, y), value_list)))
+      pairs (Unit ())
+  in
+
   let test_fibonacci () =
     let program =
       {|
@@ -198,12 +228,7 @@ let test_sample_programs =
     (stream_take 10 fibs)
 |}
     in
-    let expected =
-      let fibs =
-        List.map (fun n -> Value.Int n) [ 0; 1; 1; 2; 3; 5; 8; 13; 21; 34 ]
-      in
-      List.fold_right (fun n acc -> Value.Pair (n, acc)) fibs (Unit ())
-    in
+    let expected = value_list_of_ints [ 0; 1; 1; 2; 3; 5; 8; 13; 21; 34 ] in
     Alcotest.check (module Value) "fibonacci" expected (eval (parse program))
   in
 
@@ -246,9 +271,85 @@ let test_sample_programs =
     Alcotest.check (module Value) "imperative" expected (eval (parse program))
   in
 
+  let test_ping_pong () =
+    let program =
+      {|
+      let yield x = (shift (\k -> (cons x k))) in
+      let ping n =
+        (reset (\_ ->
+          fix ping n =
+            let ret = (yield (+ n 1)) in
+            (ping ret)
+          in
+          (ping n)))
+      in
+      let pong n =
+        (reset (\_ ->
+          fix pong n =
+            let ret = (yield (- n 1)) in
+            (pong ret)
+          in
+          (pong n)))
+      in
+      fix driver ping pong num_turns =
+        if (=? num_turns 0) then
+          ()
+        else
+          let n = (car ping) in
+          let m = (car pong) in
+          let ping = (cdr ping) in
+          let pong = (cdr pong) in
+          let next = (driver (ping m) (pong n) (- num_turns 1)) in
+          (cons n (cons m next))
+      in
+      (driver (ping 0) (pong 1) 3)
+  |}
+    in
+    let expected = value_list_of_ints [ 1; 0; 1; 0; 1; 0 ] in
+    Alcotest.check (module Value) "ping-pong" expected (eval (parse program))
+  in
+
+  let test_amb () =
+    let program =
+      {|
+      let l = (ref ()) in
+      let prepend x = (:= l (cons x (! l))) in
+      let amb choices =
+        (shift (\k ->
+          fix amb choices =
+            if (=? choices ()) then
+              ()
+            else
+              let _ = (k (car choices)) in
+              (amb (cdr choices))
+          in
+          (amb choices)))
+      in
+      let _ =
+        (reset (\_ ->
+          let x = (amb (cons 1 (cons 0 ()))) in
+          let y = (amb (cons 1 (cons 0 ()))) in
+          let _ = (prepend (cons x y)) in
+          ()))
+      in
+      (! l)
+
+  |}
+    in
+    let expected =
+      value_list_of_pairs
+      @@ List.combine
+           (List.map (fun n -> Value.Int n) [ 0; 0; 1; 1 ])
+           (List.map (fun n -> Value.Int n) [ 0; 1; 0; 1 ])
+    in
+    Alcotest.check (module Value) "amb" expected (eval (parse program))
+  in
+
   [
     Alcotest.test_case "fibonacci" `Slow test_fibonacci;
     Alcotest.test_case "imperative" `Slow test_imperative;
+    Alcotest.test_case "ping-pong" `Slow test_ping_pong;
+    Alcotest.test_case "amb" `Slow test_amb;
   ]
 
 let () =
