@@ -206,6 +206,14 @@ let[@warning "-8"] stdlib : Env.t =
         | Resolved value -> value)
   in
 
+  let b_and =
+    Builtin (fun (Bool b1) -> Builtin (fun (Bool b2) -> Bool (b1 && b2)))
+  in
+  let b_or =
+    Builtin (fun (Bool b1) -> Builtin (fun (Bool b2) -> Bool (b1 || b2)))
+  in
+  let b_not = Builtin (fun (Bool b) -> Bool (not b)) in
+
   List.fold_left
     (fun env (name, binding) -> Env.extend env name binding)
     Env.empty
@@ -227,6 +235,10 @@ let[@warning "-8"] stdlib : Env.t =
       ("!", ref_get);
       ("call/cc", call_cc);
       ("reset", reset);
+      ("shift", shift);
+      ("&&", b_and);
+      ("||", b_or);
+      ("!!", b_not);
     ]
 
 let eval e = eval stdlib e Fun.id
