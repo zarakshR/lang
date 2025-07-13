@@ -1,10 +1,9 @@
-(* TODO: lots of repetitive Alcotest.check calls, remove*)
-
 module I = Interpreter
 module Value = I.Eval.Value
 
 let parse program = I.Parser.prog I.Lexer.read (Lexing.from_string program)
 let eval = I.Eval.eval
+let check msg expected value = Alcotest.check (module Value) msg expected value
 
 (* TODO: rewrite these so that eval tests are not dependent on parsing *)
 let test_parser = []
@@ -13,10 +12,7 @@ let test_eval =
   let test_simple_app () =
     let program = {|((\x -> x) 1)|} in
     let expected = Value.Int 1 in
-    Alcotest.check
-      (module Value)
-      "simple application" expected
-      (eval (parse program))
+    check "simple application" expected (eval (parse program))
   in
 
   let test_multiple_app () =
@@ -24,10 +20,7 @@ let test_eval =
     ((\x y z -> (+ (+ x y) z)) 1 1 1)
 |} in
     let expected = Value.Int 3 in
-    Alcotest.check
-      (module Value)
-      "simple application" expected
-      (eval (parse program))
+    check "simple application" expected (eval (parse program))
   in
 
   let test_let_binding () =
@@ -35,7 +28,7 @@ let test_eval =
     let x = (\x -> (+ x 2)) in (+ (x 2) (x 3))
 |} in
     let expected = Value.Int 9 in
-    Alcotest.check (module Value) "let binding" expected (eval (parse program))
+    check "let binding" expected (eval (parse program))
   in
 
   let test_recursion () =
@@ -48,7 +41,7 @@ let test_eval =
 |}
     in
     let expected = Value.Int 24 in
-    Alcotest.check (module Value) "recursion" expected (eval (parse program))
+    check "recursion" expected (eval (parse program))
   in
 
   let test_shadowing () =
@@ -60,7 +53,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Int 2, Int 1)) in
-    Alcotest.check (module Value) "shadowing" expected (eval (parse program))
+    check "shadowing" expected (eval (parse program))
   in
 
   let test_pair_primitives () =
@@ -72,10 +65,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Pair (Int 2, Int 1), Pair (Int 1, Int 2))) in
-    Alcotest.check
-      (module Value)
-      "pair primitives" expected
-      (eval (parse program))
+    check "pair primitives" expected (eval (parse program))
   in
 
   let test_currying () =
@@ -89,7 +79,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Pair (Int 6, Int 6), Int 6)) in
-    Alcotest.check (module Value) "currying" expected (eval (parse program))
+    check "currying" expected (eval (parse program))
   in
 
   let test_mutual_recursion () =
@@ -105,10 +95,7 @@ let test_eval =
     let expected =
       Value.(Pair (Pair (Bool true, Bool true), Pair (Bool false, Bool false)))
     in
-    Alcotest.check
-      (module Value)
-      "mutual recursion" expected
-      (eval (parse program))
+    check "mutual recursion" expected (eval (parse program))
   in
 
   let test_ref_cells () =
@@ -122,7 +109,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Int 1, Int 2)) in
-    Alcotest.check (module Value) "ref cells" expected (eval (parse program))
+    check "ref cells" expected (eval (parse program))
   in
 
   let test_laziness () =
@@ -139,7 +126,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Int 1, Int 10)) in
-    Alcotest.check (module Value) "laziness" expected (eval (parse program))
+    check "laziness" expected (eval (parse program))
   in
 
   let test_call_cc () =
@@ -151,7 +138,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Int 2, Int 1)) in
-    Alcotest.check (module Value) "call/cc" expected (eval (parse program))
+    check "call/cc" expected (eval (parse program))
   in
 
   let test_shift_reset () =
@@ -166,7 +153,7 @@ let test_eval =
 |}
     in
     let expected = Value.(Pair (Int 10, Int 9)) in
-    Alcotest.check (module Value) "shift/reset" expected (eval (parse program))
+    check "shift/reset" expected (eval (parse program))
   in
 
   List.map
@@ -229,7 +216,7 @@ let test_sample_programs =
 |}
     in
     let expected = value_list_of_ints [ 0; 1; 1; 2; 3; 5; 8; 13; 21; 34 ] in
-    Alcotest.check (module Value) "fibonacci" expected (eval (parse program))
+    check "fibonacci" expected (eval (parse program))
   in
 
   let test_imperative () =
@@ -268,7 +255,7 @@ let test_sample_programs =
   |}
     in
     let expected = Value.(Pair (Int 3, Int 5)) in
-    Alcotest.check (module Value) "imperative" expected (eval (parse program))
+    check "imperative" expected (eval (parse program))
   in
 
   let test_ping_pong () =
@@ -306,7 +293,7 @@ let test_sample_programs =
   |}
     in
     let expected = value_list_of_ints [ 1; 0; 1; 0; 1; 0 ] in
-    Alcotest.check (module Value) "ping-pong" expected (eval (parse program))
+    check "ping-pong" expected (eval (parse program))
   in
 
   let test_amb () =
@@ -342,7 +329,7 @@ let test_sample_programs =
            (List.map (fun n -> Value.Int n) [ 0; 0; 1; 1 ])
            (List.map (fun n -> Value.Int n) [ 0; 1; 0; 1 ])
     in
-    Alcotest.check (module Value) "amb" expected (eval (parse program))
+    check "amb" expected (eval (parse program))
   in
 
   [
