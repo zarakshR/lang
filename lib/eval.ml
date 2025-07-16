@@ -44,7 +44,6 @@ end = struct
         raise (Invalid_argument "equality of closure")
     | Builtin _, _ | _, Builtin _ ->
         raise (Invalid_argument "equality of builtin")
-    (* TODO: types? *)
     | _, _ -> false
 end
 
