@@ -312,12 +312,22 @@ let test_sample_programs =
           in
           (amb choices)))
       in
+      let ambguard x =
+        (shift (\k ->
+          if (=? x ()) then
+            ()
+          else if x then
+            (k x)
+          else
+            ()))
+      in
+      -- non-deterministically add to l, all (x,y) s.t x = y from (0 1 2)
       let _ =
         (reset (\_ ->
-          let x = (amb (cons 1 (cons 0 ()))) in
-          let y = (amb (cons 1 (cons 0 ()))) in
-          let _ = (prepend (cons x y)) in
-          ()))
+          let x = (amb (cons 0 (cons 1 (cons 2 ())))) in
+          let y = (amb (cons 0 (cons 1 (cons 2 ())))) in
+          let _ = (ambguard (=? x y)) in
+          (prepend (cons x y))))
       in
       (! l)
 
@@ -326,8 +336,8 @@ let test_sample_programs =
     let expected =
       value_list_of_pairs
       @@ List.combine
-           (List.map (fun n -> Value.Int n) [ 0; 0; 1; 1 ])
-           (List.map (fun n -> Value.Int n) [ 0; 1; 0; 1 ])
+           (List.map (fun n -> Value.Int n) [ 2; 1; 0 ])
+           (List.map (fun n -> Value.Int n) [ 2; 1; 0 ])
     in
     check "amb" expected (eval (parse program))
   in
