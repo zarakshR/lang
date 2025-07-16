@@ -153,26 +153,54 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.k) : Value.t =
   | LitUnit () -> k @@ Unit ()
 
 let[@warning "-8"] stdlib : Env.t =
+  (* arith ops *)
   let add = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x + y))) in
   let sub = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x - y))) in
   let mul = Builtin (fun (Int x) -> Builtin (fun (Int y) -> Int (x * y))) in
-  let eq = Builtin (fun x -> Builtin (fun y -> Bool (Value.equal x y))) in
-  let cons = Builtin (fun x -> Builtin (fun y -> Pair (x, y))) in
 
+  (* structural equality *)
+  let eq = Builtin (fun x -> Builtin (fun y -> Bool (Value.equal x y))) in
+
+  (* bool ops *)
+  let b_and =
+    Builtin (fun (Bool b1) -> Builtin (fun (Bool b2) -> Bool (b1 && b2)))
+  in
+  let b_or =
+    Builtin (fun (Bool b1) -> Builtin (fun (Bool b2) -> Bool (b1 || b2)))
+  in
+  let b_not = Builtin (fun (Bool b) -> Bool (not b)) in
+
+  (* pair prims *)
+  let cons = Builtin (fun x -> Builtin (fun y -> Pair (x, y))) in
   let car = Builtin (fun (Pair (x, _)) -> x) in
   let cdr = Builtin (fun (Pair (_, x)) -> x) in
 
-  let ref = Builtin (fun x -> Cell (ref x)) in
+  (* refs *)
+  let ref_make = Builtin (fun x -> Cell (ref x)) in
   let ref_set =
     Builtin (fun (Cell cell) -> Builtin (fun x -> Unit (cell := x)))
   in
   let ref_get = Builtin (fun (Cell cell) -> !cell) in
 
+  (* printing *)
   let print_int = Builtin (fun (Int n) -> Unit (Format.printf "%d" n)) in
   let print_bool = Builtin (fun (Bool b) -> Unit (Format.printf "%B" b)) in
   let print_unit = Builtin (fun (Unit ()) -> Unit (Format.printf "()")) in
   let print_nl = Builtin (fun (Unit ()) -> Unit (Format.printf "\n")) in
 
+  (* thunks *)
+  let force =
+    Builtin
+      (fun (Thunk thunk) ->
+        match !thunk with
+        | Unresolved (env, e) ->
+            eval env e (fun value ->
+                thunk := Resolved value;
+                value)
+        | Resolved value -> value)
+  in
+
+  (* control ops *)
   let call_cc =
     let call_cc cc (Closure (cl_env, param, body)) =
       let return _ x = cc x in
@@ -194,25 +222,6 @@ let[@warning "-8"] stdlib : Env.t =
         eval cl_env body Fun.id)
   in
 
-  let force =
-    Builtin
-      (fun (Thunk thunk) ->
-        match !thunk with
-        | Unresolved (env, e) ->
-            eval env e (fun value ->
-                thunk := Resolved value;
-                value)
-        | Resolved value -> value)
-  in
-
-  let b_and =
-    Builtin (fun (Bool b1) -> Builtin (fun (Bool b2) -> Bool (b1 && b2)))
-  in
-  let b_or =
-    Builtin (fun (Bool b1) -> Builtin (fun (Bool b2) -> Bool (b1 || b2)))
-  in
-  let b_not = Builtin (fun (Bool b) -> Bool (not b)) in
-
   List.fold_left
     (fun env (name, binding) -> Env.extend env name binding)
     Env.empty
@@ -229,7 +238,7 @@ let[@warning "-8"] stdlib : Env.t =
       ("print_unit", print_unit);
       ("print_nl", print_nl);
       ("force", force);
-      ("ref", ref);
+      ("ref", ref_make);
       (":=", ref_set);
       ("!", ref_get);
       ("call/cc", call_cc);
