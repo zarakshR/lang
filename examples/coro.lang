@@ -1,0 +1,29 @@
+let yield x = (shift (\k -> (cons x k))) in
+let ping n =
+  (reset (\_ ->
+    fix ping n =
+      let ret = (yield (+ n 1)) in
+      (ping ret)
+    in
+    (ping n)))
+in
+let pong n =
+  (reset (\_ ->
+    fix pong n =
+      let ret = (yield (- n 1)) in
+      (pong ret)
+    in
+    (pong n)))
+in
+fix driver ping pong num_turns =
+  if (=? num_turns 0) then
+    ()
+  else
+    let n = (car ping) in
+    let m = (car pong) in
+    let ping = (cdr ping) in
+    let pong = (cdr pong) in
+    let next = (driver (ping m) (pong n) (- num_turns 1)) in
+    (cons n (cons m next))
+in
+(driver (ping 0) (pong 1) 3)

@@ -1,28 +1,17 @@
 (lang dune 3.17)
 
-(name interpreter)
+(name lang)
 
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github zarakshR/lang))
 
-(authors "Author Name <author@example.com>")
-
-(maintainers "Maintainer Name <maintainer@example.com>")
-
-(license LICENSE)
-
-(documentation https://url/to/documentation)
+(authors "Zaraksh Rahman <zarakshR@pm.me>")
 
 (using menhir 3.0)
 
 (package
- (name interpreter)
- (synopsis "A short synopsis")
- (description "A longer description")
- (depends ocaml)
- (tags
-  ("add topics" "to describe" your project)))
-
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
+ (name lang)
+ (synopsis "interpreter demonstrating minimal implementation of dynamic types, first-class functions, laziness, mutability, call/cc and shift/reset")
+ (depends ocaml ppx_deriving (alcotest :with-test)))

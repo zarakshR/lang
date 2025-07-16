@@ -1,0 +1,31 @@
+let l = (ref ()) in
+let prepend x = (:= l (cons x (! l))) in
+let amb choices =
+  (shift (\k ->
+    fix amb choices =
+      if (=? choices ()) then
+        ()
+      else
+        let _ = (k (car choices)) in
+        (amb (cdr choices))
+    in
+    (amb choices)))
+in
+let ambguard x =
+  (shift (\k ->
+    if (=? x ()) then
+      ()
+    else if x then
+      (k x)
+    else
+      ()))
+in
+-- non-deterministically add to l, all (x,y) s.t x = y from (0 1 2)
+let _ =
+  (reset (\_ ->
+    let x = (amb (cons 0 (cons 1 (cons 2 ())))) in
+    let y = (amb (cons 0 (cons 1 (cons 2 ())))) in
+    let _ = (ambguard (=? x y)) in
+    (prepend (cons x y))))
+in
+(! l)

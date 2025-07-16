@@ -1,0 +1,24 @@
+fix stream_drop n s =
+  if (=? n 0) then s else
+    (stream_drop (- n 1) (force (cdr s)))
+in
+fix stream_take n s =
+  if (=? n 0) then () else
+    let head = (force (car s)) in
+    let tail = (force (cdr s)) in
+    (cons head (stream_take (- n 1) tail))
+in
+fix stream_zip_with f s1 s2 =
+  let a = (car s1) in
+  let a_tail = (cdr s1) in
+  let b = (car s2) in
+  let b_tail = (cdr s2) in
+  let head = lazy (f (force a) (force b)) in
+  let tail = lazy (stream_zip_with f (force a_tail) (force b_tail)) in
+  (cons head tail)
+in
+fix fibs =
+  let tail = lazy (stream_zip_with + fibs (stream_drop 1 fibs)) in
+  (cons (lazy 0) (lazy (cons (lazy 1) tail)))
+in
+(stream_take 10 fibs)
