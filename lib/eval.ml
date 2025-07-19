@@ -49,13 +49,13 @@ end
 
 and Env : sig
   type t [@@deriving show]
+
   (* names can be bound to knots to be mutably updated later *)
   type knot [@@deriving show]
 
   val empty : t
   val lookup : t -> symbol -> Value.t
   val extend : t -> symbol -> Value.t -> t
-
   val knot : t -> symbol -> t * knot
   val tie : knot -> Value.t -> unit
 
