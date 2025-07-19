@@ -49,28 +49,22 @@ end
 
 and Env : sig
   type t [@@deriving show]
+  (* names can be bound to knots to be mutably updated later *)
+  type knot [@@deriving show]
 
   val empty : t
   val lookup : t -> symbol -> Value.t
   val extend : t -> symbol -> Value.t -> t
 
-  (* bind symbol to a knot, to be `tie`d later *)
-  val knot : t -> symbol -> t
-
-  (* tie a previously knotted symbol with a value *)
-  val tie : t -> symbol -> Value.t -> unit
+  val knot : t -> symbol -> t * knot
+  val tie : knot -> Value.t -> unit
 
   (* trim env w.r.t to `expr` *)
   val trim : t -> Ast.t -> t
 end = struct
-  type binding =
-    (* just a value *)
-    | Plain of Value.t
-    (* a cell that will be filled in with a value later, for self-reference
-       (recursion, etc.) *)
-    | Knot of Value.t option ref
-  [@@deriving show]
-
+  (* a cell to be filled in with a value later, for self-reference etc *)
+  type knot = Value.t option ref [@@deriving show]
+  type binding = Plain of Value.t | Knot of knot [@@deriving show]
   type t = binding SymTab.t [@@deriving show]
 
   let empty = SymTab.empty
@@ -87,13 +81,11 @@ end = struct
   let knot env name =
     let cell : Value.t option ref = ref None in
     let env = SymTab.add name (Knot cell) env in
-    env
+    (env, cell)
 
-  let tie env name value =
-    let[@warning "-8"] (Knot cell) = SymTab.find name env in
+  let tie cell value =
     assert (!cell = None);
-    let _ = cell := Some value in
-    ()
+    cell := Some value
 
   let trim env expr =
     SymTab.filter (fun x _ -> SymSet.mem x (Ast.free expr)) env
@@ -113,18 +105,22 @@ let rec eval (env : Env.t) (expr : Ast.t) (k : Value.k) : Value.t =
       let env = Env.extend env name e in
       eval env body k
   | Fix (binds, body) ->
-      let env =
-        List.fold_left (fun env (name, _) -> Env.knot env name) env binds
+      let env, binds =
+        let knot env (name, expr) =
+          let env, knot = Env.knot env name in
+          (env, (expr, knot))
+        in
+        List.fold_left_map knot env binds
       in
       (* use k here just to sequence, we don't want evaluation of bindings to
          depend on back-references existing *)
       let rec fix_eval binds k =
         match binds with
         | [] -> k ()
-        | (name, expr) :: binds ->
+        | (expr, knot) :: binds ->
             let* value = eval env expr in
             let* () = fix_eval binds in
-            Env.tie env name value;
+            Env.tie knot value;
             k ()
       in
       let* () = fix_eval binds in
