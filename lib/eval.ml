@@ -70,11 +70,13 @@ end = struct
   let empty = SymTab.empty
 
   let lookup env name =
-    try
-      match SymTab.find name env with
-      | Knot cell -> Option.get !cell
-      | Plain value -> value
-    with Invalid_argument _ | Not_found -> failwith ("lookup: " ^ name)
+    match SymTab.find_opt name env with
+    | None -> failwith ("lookup: unknown: " ^ name)
+    | Some (Plain value) -> value
+    | Some (Knot cell) -> (
+        match !cell with
+        | None -> failwith ("lookup: untied: " ^ name)
+        | Some value -> value)
 
   let extend env name value = SymTab.add name (Plain value) env
 
